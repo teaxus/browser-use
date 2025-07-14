@@ -1,0 +1,36 @@
+
+environments:
+  test:
+    base_url: "https://devcloud.kanghehealth.com"
+    admin_url: "https://test-admin.kanghehealth.com"
+    api_url: "https://test-api.kanghehealth.com"
+    credentials:
+      phone: "18682025716"
+      code: "250410"
+    custom_vars:
+      debug_mode: true
+      timeout: 60000
+      step_timeout: 600  # 10分钟，合理的步骤超时时间
+      
+  prod:
+    base_url: "https://prod.kanghehealth.com"
+    admin_url: "https://admin.kanghehealth.com"
+    api_url: "https://api.kanghehealth.com"
+    credentials:
+      phone: "prod_phone"
+      code: "prod_code"
+    custom_vars:
+      debug_mode: false
+      timeout: 60000
+      step_timeout: 60000
+
+default_environment: "test"
+
+# LLM配置 - 配置后CLI无需重复指定参数
+llm_config:
+  provider: "openai"
+  model: "qwen-vl-max"
+  base_url: "https://yunwu.zeabur.app/v1"
+  api_key: "sk-MhBwOiyBUVlWbxOqgbUAwwiQG6T3qRP8Kk24BABcGErlyvmK"
+  temperature: 0.1
+  max_tokens: 400000
