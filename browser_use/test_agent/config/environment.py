@@ -8,6 +8,16 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 
+class LLMConfig(BaseModel):
+    """LLM配置"""
+    provider: str = "openai"
+    model: str = "gpt-4o-mini"
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    temperature: float = 0.1
+    max_tokens: int = 4000
+
+
 class CredentialsConfig(BaseModel):
     """登录凭据配置"""
     phone: Optional[str] = None
@@ -31,6 +41,7 @@ class EnvironmentConfig(BaseModel):
 
     environments: Dict[str, SingleEnvironmentConfig]
     default_environment: str = "test"
+    llm_config: Optional[LLMConfig] = None
 
     @classmethod
     def from_yaml(cls, config_path: Union[str, Path]) -> 'EnvironmentConfig':
@@ -110,7 +121,7 @@ class TemplateEngine:
 EXAMPLE_CONFIG = """
 environments:
   test:
-    base_url: "https://test.kanghehealth.com"
+    base_url: "https://devcloud.kanghehealth.com"
     admin_url: "https://test-admin.kanghehealth.com"
     api_url: "https://test-api.kanghehealth.com"
     credentials:
@@ -121,7 +132,7 @@ environments:
       timeout: 30
       
   prod:
-    base_url: "https://devcloud.kanghehealth.com"
+    base_url: "https://prod.kanghehealth.com"
     admin_url: "https://admin.kanghehealth.com"
     api_url: "https://api.kanghehealth.com"
     credentials:
@@ -132,4 +143,13 @@ environments:
       timeout: 60
 
 default_environment: "test"
+
+# LLM配置 - 配置后CLI无需重复指定参数
+llm_config:
+  provider: "openai"
+  model: "qwen-vl-max"
+  base_url: "https://yunwu.zeabur.app/v1"
+  api_key: "sk-MhBwOiyBUVlWbxOqgbUAwwiQG6T3qRP8Kk24BABcGErlyvmK"
+  temperature: 0.1
+  max_tokens: 4000
 """

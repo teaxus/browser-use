@@ -62,24 +62,48 @@ async def run_test_command(args):
             print(f"错误: 配置文件不存在: {config_file}")
             return 1
 
-    # 创建LLM实例
-    try:
-        if args.base_url:
-            llm = ChatOpenAI(
-                model=args.model,
-                base_url=args.base_url,
-                api_key=args.api_key,
-                temperature=args.temperature
-            )
-        else:
-            llm = ChatOpenAI(
-                model=args.model,
-                api_key=args.api_key,
-                temperature=args.temperature
-            )
-    except Exception as e:
-        print(f"错误: 创建LLM实例失败: {e}")
-        return 1
+    # 创建LLM实例 - 优先使用配置文件中的设置
+    llm = None
+    if config_file:
+        try:
+            from ..config.environment import EnvironmentConfig
+            env_config = EnvironmentConfig.from_yaml(config_file)
+
+            if env_config.llm_config:
+                # 使用配置文件中的LLM配置
+                llm_cfg = env_config.llm_config
+                print(f"✅ 使用配置文件中的LLM设置: {llm_cfg.model}")
+
+                llm = ChatOpenAI(
+                    model=llm_cfg.model,
+                    base_url=llm_cfg.base_url,
+                    api_key=llm_cfg.api_key,
+                    temperature=llm_cfg.temperature
+                )
+        except Exception as e:
+            print(f"警告: 无法从配置文件加载LLM设置: {e}")
+
+    # 如果配置文件中没有LLM设置，使用命令行参数
+    if llm is None:
+        # 检查必要的命令行参数
+        if not args.model or not args.api_key:
+            print("错误: 配置文件中没有LLM设置，请提供 --model 和 --api-key 参数")
+            return 1
+
+        try:
+            print("✅ 使用命令行参数创建LLM实例")
+            llm_args = {
+                'model': args.model,
+                'api_key': args.api_key,
+                'temperature': args.temperature or 0.1
+            }
+            if args.base_url:
+                llm_args['base_url'] = args.base_url
+
+            llm = ChatOpenAI(**llm_args)
+        except Exception as e:
+            print(f"错误: 创建LLM实例失败: {e}")
+            return 1
 
     # 创建设置
     settings = TestAgentSettings(
@@ -180,15 +204,15 @@ def main():
     run_parser.add_argument('--environment', '-e', help='指定运行环境')
     run_parser.add_argument('--output', '-o', help='输出目录')
 
-    # LLM 设置
-    run_parser.add_argument('--model', default='gpt-4o-mini', help='模型名称 (默认: gpt-4o-mini)')
-    run_parser.add_argument('--api-key', help='API密钥')
-    run_parser.add_argument('--base-url', help='API基础URL')
-    run_parser.add_argument('--temperature', type=float, default=0.1, help='温度参数 (默认: 0.1)')
+    # LLM 设置 (当配置文件中已有LLM配置时，这些参数是可选的)
+    run_parser.add_argument('--model', help='模型名称 (默认使用配置文件中的设置)')
+    run_parser.add_argument('--api-key', help='API密钥 (默认使用配置文件中的设置)')
+    run_parser.add_argument('--base-url', help='API基础URL (默认使用配置文件中的设置)')
+    run_parser.add_argument('--temperature', type=float, help='温度参数 (默认使用配置文件中的设置)')
 
     # 测试设置
     run_parser.add_argument('--max-retries', type=int, default=3, help='最大重试次数 (默认: 3)')
-    run_parser.add_argument('--timeout', type=int, default=300, help='总超时时间秒数 (默认: 300)')
+    run_parser.add_argument('--timeout', type=int, default=600, help='总超时时间秒数 (默认: 600秒=10分钟)')
     run_parser.add_argument('--use-vision', action='store_true', default=True, help='启用视觉识别')
     run_parser.add_argument('--no-vision', dest='use_vision', action='store_false', help='禁用视觉识别')
     run_parser.add_argument('--headless', action='store_true', help='无头模式运行')
