@@ -1,0 +1,8 @@
+environments:
+  test:
+    base_url: "https://devcloud.kanghehealth.com"
+    credentials:
+      phone: "18682025716"
+      code: "250410"
+
+default_environment: "test"

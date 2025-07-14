@@ -1,0 +1,75 @@
+; filepath: /Users/teaxus/AILearning/browser-use/.github/prompts
+# 测试代理框架项目
+# 当 AI 助手在此目录下工作时，应严格遵循以下规范
+
+## 🎯 项目身份
+PROJECT_NAME=测试代理框架 (Test Agent) 
+PROJECT_TYPE=Test Agent 
+CURRENT_VERSION=V1.0
+WORK_DIRECTORY=/Users/teaxus/AILearning/browser-use/test_agent
+test agent的项目进度描述文档: /Users/teaxus/AILearning/browser-use/browser_use/test_agent/PROJECT_OVERVIEW.md
+
+
+
+## 🚫 禁止事项 (高优先级)
+- 禁止编辑/Users/teaxus/AILearning/browser-use/browser_use/test_agent以外的代码
+
+
+# 使用了browser_use框架进行开发
+browser_use的文档在/Users/teaxus/AILearning/browser-use/docs
+example在/Users/teaxus/AILearning/browser-use/example
+
+
+
+## 文件结构详解
+
+```
+browser-use/
+├── 📁 browser_use/                    # 核心包
+│   ├── 🤖 agent/                      # 智能代理模块
+│   │   ├── service.py                 # 主代理逻辑 (1100+ 行)
+│   │   ├── prompts.py                 # 系统提示词
+│   │   ├── views.py                   # 代理视图
+│   │   ├── memory/                    # 记忆管理 (已弃用)
+│   │   └── message_manager/           # 消息管理
+│   │
+│   ├── 🌐 browser/                    # 浏览器管理
+│   │   ├── browser.py                 # 浏览器实例
+│   │   ├── session.py                 # 会话管理
+│   │   ├── profile.py                 # 配置文件
+│   │   ├── context.py                 # 上下文管理
+│   │   └── utils/                     # 工具函数
+│   │
+│   ├── 🌳 dom/                        # DOM 处理
+│   │   ├── service.py                 # DOM 服务
+│   │   ├── utils.py                   # DOM 工具
+│   │   ├── clickable_element_processor/ # 可点击元素处理
+│   │   ├── dom_tree/                  # DOM 树管理
+│   │   └── history_tree_processor/    # 历史处理
+│   │
+│   ├── 🎮 controller/                 # 控制器
+│   │   ├── service.py                 # 控制服务
+│   │   ├── views.py                   # 控制视图
+│   │   └── registry/                  # 动作注册表
+│   │
+│   ├── 🧠 llm/                        # LLM 集成
+│   │   ├── base.py                    # 基础接口
+│   │   ├── messages.py                # 消息处理
+│   │   ├── schema.py                  # 数据模式
+│   │   ├── anthropic/                 # Claude 集成
+│   │   ├── google/                    # Gemini 集成
+│   │   ├── azure/                     # Azure OpenAI
+│   │   └── aws/                       # AWS Bedrock
+│   │
+│   ├── 🧪 test_agent/                 # 测试代理框架 ⭐
+│   │   ├── core/
+│   │   │   ├── executor.py            # 测试执行器 (主要逻辑)
+│   │   │   └── intervention.py        # 人工干预处理
+│   │   ├── cli/
+│   │   │   └── interface.py           # 命令行接口
+│   │   └── config/                    # 配置管理
+│
+├── 📝 examples/                       # 示例代码
+│
+├── 📚 docs/                           # 文档
+```
