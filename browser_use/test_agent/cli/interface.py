@@ -105,15 +105,37 @@ async def run_test_command(args):
             print(f"错误: 创建LLM实例失败: {e}")
             return 1
 
+    # 🔧 修复: 从配置文件中读取step_timeout值
+    config_step_timeout = 600  # 默认值
+    if config_file and args.environment:
+        try:
+            import yaml
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config_data = yaml.safe_load(f)
+
+            env_config = config_data.get('environments', {}).get(args.environment, {})
+            custom_vars = env_config.get('custom_vars', {})
+            if 'step_timeout' in custom_vars:
+                config_step_timeout = custom_vars['step_timeout']
+                print(f"✅ 从配置文件读取step_timeout: {config_step_timeout}秒")
+        except Exception as e:
+            print(f"警告: 读取配置文件中的step_timeout失败: {e}")
+
+    # 优先使用命令行参数，其次使用配置文件值
+    final_step_timeout = args.step_timeout if args.step_timeout else config_step_timeout
+
     # 创建设置
     settings = TestAgentSettings(
         max_retries=args.max_retries,
         timeout=args.timeout,
+        step_timeout=final_step_timeout,  # 🔧 添加step_timeout参数
         use_vision=args.use_vision,
         headless=args.headless,
         save_screenshots=args.save_screenshots,
         report_format=args.report_format
     )
+
+    print(f"✅ 设置创建完成 - step_timeout: {final_step_timeout}秒")
 
     # 设置输出目录
     output_dir = None
@@ -213,6 +235,7 @@ def main():
     # 测试设置
     run_parser.add_argument('--max-retries', type=int, default=3, help='最大重试次数 (默认: 3)')
     run_parser.add_argument('--timeout', type=int, default=600, help='总超时时间秒数 (默认: 600秒=10分钟)')
+    run_parser.add_argument('--step-timeout', type=int, help='单个步骤超时时间秒数 (默认从配置文件读取，或600秒)')
     run_parser.add_argument('--use-vision', action='store_true', default=True, help='启用视觉识别')
     run_parser.add_argument('--no-vision', dest='use_vision', action='store_false', help='禁用视觉识别')
     run_parser.add_argument('--headless', action='store_true', help='无头模式运行')

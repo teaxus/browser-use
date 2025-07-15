@@ -50,7 +50,7 @@ class TestExecutor:
         llm,
         intervention_handler: HumanInterventionHandler,
         max_retries: int = 3,
-        step_timeout: int = 600,  # 默认10分钟
+        step_timeout: int = 60000,  # 默认10分钟
         use_vision: bool = True,
         headless: bool = False,
         screenshots_dir: Optional[Path] = None
@@ -89,10 +89,11 @@ class TestExecutor:
         self.logger.info(f"开始执行测试用例: {test_case.metadata.test_name}")
 
         try:
-            # 初始化浏览器会话 - 使用正确的创建方法
+            # 初始化浏览器会话 - 使用正确的创建方法并启动
             self.browser_session = self._create_browser_session()
-            # browser-use会自动启动，不需要手动调用start()
-            self.logger.info(f"浏览器会话已创建，headless模式: {self.headless}")
+            # 确保浏览器会话完全启动
+            await self.browser_session.start()
+            self.logger.info(f"浏览器会话已创建并启动，headless模式: {self.headless}")
 
             # 执行所有步骤
             current_step = 0
@@ -168,15 +169,25 @@ class TestExecutor:
             )
 
         finally:
-            # 只在测试完全结束时关闭浏览器，不在每个步骤后关闭
-            if self.browser_session:
+            # 🔧 关键修复: 只在测试真正完全结束时关闭浏览器，且检查干预状态
+            intervention_active = getattr(self, '_is_intervention_in_progress', False)
+
+            if self.browser_session and not intervention_active:
                 try:
+                    self.logger.info("测试执行完成，准备关闭浏览器会话")
+                    # 临时设置keep_alive=False以允许关闭
+                    if hasattr(self.browser_session, 'browser_profile'):
+                        self.browser_session.browser_profile.keep_alive = False
                     await self.browser_session.close()
                     self.browser_session = None
                     self.current_agent = None
                     self.logger.info("测试完成，浏览器会话已关闭")
                 except Exception as e:
                     self.logger.warning(f"关闭浏览器会话失败: {e}")
+            elif intervention_active:
+                self.logger.info("⚠️  人工干预进行中，保持浏览器会话开启")
+            elif not self.browser_session:
+                self.logger.info("浏览器会话已不存在，无需关闭")
 
     async def _execute_step(self, step: TestStep, test_case: TestCase) -> StepResult:
         """执行单个步骤"""
@@ -192,6 +203,8 @@ class TestExecutor:
             if not self.browser_session:
                 self.logger.warning("浏览器会话不存在，重新创建")
                 self.browser_session = self._create_browser_session()
+                await self.browser_session.start()
+                self.logger.info("浏览器会话重新创建并启动")
 
             # 🔧 关键修复2: 检查浏览器会话状态（但不重新创建）
             try:
@@ -208,12 +221,50 @@ class TestExecutor:
             page_title = await self._get_page_title_safe()
             self.logger.info(f"执行前状态 - URL: {current_url}, 标题: {page_title}")
 
+            # 清理浏览器自动填充数据
+            if self.browser_session and hasattr(self.browser_session, 'agent_current_page'):
+                try:
+                    page = self.browser_session.agent_current_page
+                    if page and not page.is_closed():
+                        # 清理自动填充数据
+                        await page.evaluate("""
+                            // 清理所有表单的自动填充历史
+                            const forms = document.querySelectorAll('form');
+                            forms.forEach(form => {
+                                if (form.reset) form.reset();
+                            });
+                            
+                            // 清理所有输入框的值
+                            const inputs = document.querySelectorAll('input');
+                            inputs.forEach(input => {
+                                input.value = '';
+                                input.setAttribute('autocomplete', 'off');
+                            });
+                            
+                            // 清理浏览器存储的表单数据
+                            localStorage.clear();
+                            sessionStorage.clear();
+                        """)
+                        self.logger.info("🧹 已清理浏览器自动填充和历史数据")
+                except Exception as e:
+                    self.logger.warning(f"清理浏览器数据失败: {e}")
+
             # 构建步骤任务描述
             step_task = self._build_step_task(step, test_case)
-            self.logger.info(f"任务描述: {step_task[:200]}...")
+            self.logger.info(f"🎯 完整任务描述:")
+            self.logger.info(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            self.logger.info(step_task)
+            self.logger.info(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-            # 🔧 关键修复4: 创建Agent时重用browser_session
+            # 🔧 关键修复4: 确保浏览器会话完全启动，然后创建Agent
             if not self.current_agent:
+                # 确保浏览器会话已经启动
+                try:
+                    await self.browser_session.start()
+                    self.logger.info("浏览器会话启动成功")
+                except Exception as e:
+                    self.logger.warning(f"浏览器会话启动警告: {e}")
+
                 self.current_agent = Agent(
                     task=step_task,
                     llm=self.llm,
@@ -224,11 +275,12 @@ class TestExecutor:
                 # 更新现有Agent的任务，避免重新创建
                 self.current_agent.task = step_task
 
-            # 🔧 关键修复5: 使用更宽松的超时和步骤限制执行Agent
+            # 🔧 关键修复5: 使用更宽松的超时和步骤限制执行Agent，强化
             result = None
             try:
                 # 设置干预标志，防止在执行期间关闭浏览器
                 self._is_intervention_in_progress = True
+                self.logger.info("开始Agent执行，启动浏览器保护")
 
                 # 给Agent足够的时间和步骤数执行
                 result = await asyncio.wait_for(
@@ -249,24 +301,39 @@ class TestExecutor:
                 self.logger.error(f"Agent执行出错: {error_details['type']}: {error_details['message']}")
                 self.logger.debug(f"完整错误堆栈:\n{error_details['traceback']}")
 
-                # 只在特定的致命浏览器错误时重新创建会话
-                if any(
-                        keyword in str(agent_error).lower()
-                        for keyword in ['browser crashed', 'connection refused', 'target closed']):
+                # 🔧 关键修复: 不要轻易重新创建浏览器会话，这会导致无故关闭
+                # 只在极端情况下(如浏览器崩溃)才重新创建
+                fatal_browser_errors = [
+                    'browser crashed', 'connection refused', 'target closed',
+                    'browser process exited', 'browser has been closed'
+                ]
+
+                if any(keyword in str(agent_error).lower() for keyword in fatal_browser_errors):
                     self.logger.warning("检测到致命浏览器错误，尝试重新创建浏览器会话")
                     try:
                         if self.browser_session:
                             await self.browser_session.close()
                         await asyncio.sleep(2)  # 等待浏览器完全关闭
                         self.browser_session = self._create_browser_session()
+                        await self.browser_session.start()
                         self.current_agent = None  # 重置Agent，下次使用时会重新创建
+                        self.logger.info("浏览器会话已重新创建")
                     except Exception as reset_error:
                         self.logger.error(f"重新创建浏览器会话失败: {reset_error}")
+                else:
+                    # 对于非致命错误，保持浏览器会话，让干预机制处理
+                    self.logger.warning("Agent执行失败，但保持浏览器会话用于人工干预")
 
                 # 不要重新抛出异常，而是返回失败结果让干预机制处理
                 raise agent_error
             finally:
-                self._is_intervention_in_progress = False
+                # 只有在非致命错误时才关闭保护模式
+                if not any(keyword in str(locals().get('agent_error', '')).lower()
+                           for keyword in ['browser crashed', 'connection refused', 'target closed']):
+                    self._is_intervention_in_progress = False
+                    self.logger.info("Agent执行完成，关闭浏览器保护")
+                else:
+                    self.logger.warning("检测到致命浏览器错误，保持保护模式直到恢复")
 
             # 验证执行结果
             final_url = await self._get_current_url_safe()
@@ -319,18 +386,33 @@ class TestExecutor:
             )
 
     def _build_step_task(self, step: TestStep, test_case: TestCase) -> str:
-        """构建步骤任务描述"""
+        """构建步骤任务描述 - 改进版：更直接地指定数值"""
         task_parts = [
             f"## 步骤 {step.step_number}: {step.title}",
             "",
             "### 任务目标:",
             test_case.objective,
             "",
-            "### 当前步骤要求:",
         ]
 
+        # 🔧 关键修复：从整个测试用例中提取重要数值，而不仅仅是当前步骤
+        important_values = self._extract_important_values_from_test_case(test_case)
+
+        # 如果有重要数值，直接在开头强调
+        if important_values:
+            task_parts.extend([
+                "### 🎯 系统锁定的关键数值 (必须严格使用):",
+            ])
+            for value_type, value in important_values.items():
+                task_parts.append(f"- {value_type}: {value}")
+            task_parts.append("")
+
+        task_parts.append("### 当前步骤要求:")
+
+        # 构建更直接的操作指令
         for action in step.actions:
-            task_parts.append(f"- {action}")
+            direct_action = self._make_action_direct(action, important_values)
+            task_parts.append(f"- {direct_action}")
 
         if step.expected_result:
             task_parts.extend([
@@ -339,17 +421,124 @@ class TestExecutor:
                 step.expected_result
             ])
 
-        # 添加特殊提醒
+        # 如果有重要数值，添加更强的约束
+        if important_values:
+            task_parts.extend([
+                "",
+                "### 🚨 系统强制约束 🚨:",
+            ])
+            for value_type, value in important_values.items():
+                task_parts.append(f"- {value_type}只能是 {value}，不得使用其他任何数值")
+            task_parts.extend([
+                "- 系统已锁定以上数值，请严格执行",
+                "- 如检测到使用了错误数值，测试将自动终止",
+            ])
+
         task_parts.extend([
             "",
-            "### 重要提醒:",
+            "### 其他要求:",
             "- 仔细查看页面内容，确保正确识别元素",
             "- 如果遇到加载等待，请耐心等待页面完全加载",
             "- 如果某个操作失败，请尝试不同的方法",
+            "- 对于聊天功能，请保持自然的对话风格",
             "- 对于聊天功能，请保持自然的对话风格"
         ])
 
         return "\n".join(task_parts)
+
+    def _make_action_direct(self, action: str, important_values: Dict[str, str]) -> str:
+        """将操作指令转换为更直接的形式，避免依赖 AI 理解"""
+        direct_action = action
+
+        # 如果包含手机号，直接指定数值
+        if "手机号" in action and "手机号" in important_values:
+            phone = important_values["手机号"]
+            # 更直接的指令
+            direct_action = f"在手机号输入框中精确输入: {phone} (系统指定)"
+
+        # 如果包含验证码，直接指定数值
+        elif "验证码" in action and "验证码" in important_values:
+            code = important_values["验证码"]
+            # 更直接的指令
+            direct_action = f"在验证码输入框中精确输入: {code} (系统指定)"
+
+        return direct_action
+
+    def _extract_important_values(self, actions: List[str]) -> Dict[str, str]:
+        """从步骤操作中动态提取重要数值（如手机号、验证码等）"""
+        import re
+
+        values = {}
+
+        for action in actions:
+            # 提取手机号（中国手机号格式：1开头的11位数字）
+            phone_pattern = r'1[3-9]\d{9}'
+            phone_match = re.search(phone_pattern, action)
+            if phone_match and '手机号' in action:
+                values['手机号'] = phone_match.group()
+
+            # 提取验证码（通常是4-6位数字）
+            if '验证码' in action or '代码' in action:
+                # 多种验证码匹配模式
+                code_patterns = [
+                    r'输入(\d{4,6})',       # 输入后面的数字
+                    r'[（(](\d{4,6})[）)]',  # 括号中的数字
+                    r'\b(\d{6})\b',         # 独立的6位数字
+                    r'\b(\d{4,5})\b'        # 独立的4-5位数字
+                ]
+
+                for pattern in code_patterns:
+                    code_match = re.search(pattern, action)
+                    if code_match:
+                        code_value = code_match.group(1) if code_match.groups() else code_match.group()
+                        # 确保不是手机号的一部分
+                        if len(code_value) <= 6 and code_value not in values.get('手机号', ''):
+                            values['验证码'] = code_value
+                            break
+
+        return values
+
+    def _extract_important_values_from_test_case(self, test_case: TestCase) -> Dict[str, str]:
+        """从整个测试用例中提取重要数值（如手机号、验证码等）"""
+        import re
+
+        values = {}
+
+        # 从所有步骤中收集动作
+        all_actions = []
+        for step in test_case.steps:
+            all_actions.extend(step.actions)
+
+        for action in all_actions:
+            # 提取手机号（中国手机号格式：1开头的11位数字）
+            phone_pattern = r'1[3-9]\d{9}'
+            phone_match = re.search(phone_pattern, action)
+            if phone_match and '手机号' in action:
+                values['手机号'] = phone_match.group()
+                self.logger.info(f"🔍 从测试用例中提取到手机号: {phone_match.group()}")
+
+            # 提取验证码（通常是4-6位数字）
+            if '验证码' in action or '代码' in action:
+                # 多种验证码匹配模式
+                code_patterns = [
+                    r'输入:(\d{4,6})',      # 输入:后面的数字
+                    r'输入(\d{4,6})',       # 输入后面的数字
+                    r'[（(](\d{4,6})[）)]',  # 括号中的数字
+                    r'\b(\d{6})\b',         # 独立的6位数字
+                    r'\b(\d{4,5})\b'        # 独立的4-5位数字
+                ]
+
+                for pattern in code_patterns:
+                    code_match = re.search(pattern, action)
+                    if code_match:
+                        code_value = code_match.group(1) if code_match.groups() else code_match.group()
+                        # 确保不是手机号的一部分
+                        if len(code_value) <= 6 and code_value not in values.get('手机号', ''):
+                            values['验证码'] = code_value
+                            self.logger.info(f"🔍 从测试用例中提取到验证码: {code_value}")
+                            break
+
+        return values
 
     async def _handle_step_failure(
         self,
@@ -388,8 +577,9 @@ class TestExecutor:
             retry_count=retry_count
         )
 
-        # 标记人工干预开始
+        # 🔧 强化干预保护: 标记人工干预开始，绝对不允许关闭浏览器
         self._is_intervention_in_progress = True
+        self.logger.info("=== 人工干预开始，浏览器保护模式启动 ===")
 
         try:
             response = await self.intervention_handler.request_intervention(
@@ -398,6 +588,7 @@ class TestExecutor:
             )
         finally:
             # 标记人工干预结束
+            self.logger.info("=== 人工干预结束，浏览器保护模式关闭 ===")
             self._is_intervention_in_progress = False
 
         # 记录干预信息
@@ -538,13 +729,28 @@ class TestExecutor:
 
     def _create_browser_session(self) -> 'BrowserSession':
         """创建浏览器会话"""
-        # 创建浏览器配置
+        # 创建浏览器配置 - 使用更完整的配置避免context创建失败
         profile = BrowserProfile(
-            headless=self.headless
+            headless=self.headless,
+            # 🔧 关键配置: keep_alive=True 防止浏览器被意外关闭
+            keep_alive=True,  # 改为True，防止意外关闭
+            # 确保有合适的超时设置
+            timeout=60000,  # 60秒超时
+            # 添加基本的浏览器参数
+            args=[
+                '--no-first-run',
+                '--no-default-browser-check',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--no-sandbox',
+                '--disable-setuid-sandbox'
+            ]
         )
 
         # 使用正确的BrowserSession创建方式
-        return BrowserSession(browser_profile=profile)
+        session = BrowserSession(browser_profile=profile)
+        self.logger.info("浏览器会话已创建，keep_alive=True")
+        return session
 
     async def _safe_browser_close(self):
         """安全关闭浏览器，在干预期间不关闭"""

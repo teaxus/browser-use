@@ -11,8 +11,8 @@ class TestAgentSettings(BaseModel):
 
     # 基础设置
     max_retries: int = Field(default=3, description="步骤失败时的最大重试次数")
-    timeout: int = Field(default=300, description="测试总超时时间（秒）")
-    step_timeout: int = Field(default=30, description="单个步骤超时时间（秒）")
+    timeout: int = Field(default=30000000, description="测试总超时时间（秒）")
+    step_timeout: int = Field(default=30000000, description="单个步骤超时时间（秒）")
 
     # 人工干预设置
     intervention_enabled: bool = Field(default=True, description="是否启用人工干预")

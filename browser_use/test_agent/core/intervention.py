@@ -4,7 +4,7 @@
 import asyncio
 import json
 from typing import Dict, Any, Optional, List, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import logging
 
@@ -26,7 +26,7 @@ class InterventionContext:
     screenshot_path: Optional[str] = None
     page_url: Optional[str] = None
     retry_count: int = 0
-    previous_attempts: List[str] = None
+    previous_attempts: List[str] = field(default_factory=list)
 
     def __post_init__(self):
         if self.previous_attempts is None:

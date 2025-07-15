@@ -9,10 +9,11 @@ CURRENT_VERSION=V1.0
 WORK_DIRECTORY=/Users/teaxus/AILearning/browser-use/test_agent
 test agent的项目进度描述文档: /Users/teaxus/AILearning/browser-use/browser_use/test_agent/PROJECT_OVERVIEW.md
 
-
+开发的时候
 
 ## 🚫 禁止事项 (高优先级)
 - 禁止编辑/Users/teaxus/AILearning/browser-use/browser_use/test_agent以外的代码
+- 不要使用--headless模式去测试
 
 
 # 使用了browser_use框架进行开发

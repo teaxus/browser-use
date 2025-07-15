@@ -170,8 +170,48 @@ class TestAgent:
             # 替换测试用例中的变量
             processed_content = template_engine.replace_variables(test_case.processed_content)
 
-            # 重新解析处理后的内容
-            processed_test_case = self.parser.parse(processed_content)
+            # 创建cache目录并保存替换前后的内容
+            cache_dir = Path("./cache")
+            cache_dir.mkdir(exist_ok=True)
+
+            # 保存原始内容
+            original_file = cache_dir / f"{test_case.metadata.test_name}_original.md"
+            with open(original_file, 'w', encoding='utf-8') as f:
+                f.write(test_case.processed_content)
+
+            # 保存替换后的内容
+            processed_file = cache_dir / f"{test_case.metadata.test_name}_processed.md"
+            with open(processed_file, 'w', encoding='utf-8') as f:
+                f.write(processed_content)
+
+            # 保存环境变量信息
+            env_vars_file = cache_dir / f"{test_case.metadata.test_name}_env_vars.json"
+            import json
+            with open(env_vars_file, 'w', encoding='utf-8') as f:
+                json.dump(env_vars, f, indent=2, ensure_ascii=False)
+
+            # 从cache文件重新读取处理后的内容，确保使用的是真正替换后的版本
+            with open(processed_file, 'r', encoding='utf-8') as f:
+                final_processed_content = f.read()
+
+            # 强制输出调试信息来检查变量替换
+            self.logger.info(f"🔧 原始内容包含变量: {bool('${' in test_case.processed_content)}")
+            self.logger.info(f"🔧 环境变量已保存到: {env_vars_file}")
+            self.logger.info(f"🔧 原始内容已保存到: {original_file}")
+            self.logger.info(f"🔧 处理后内容已保存到: {processed_file}")
+
+            # 检查是否真的有变化
+            if test_case.processed_content != final_processed_content:
+                self.logger.info("✅ 内容确实发生了变化")
+            else:
+                self.logger.warning("⚠️ 内容没有发生变化 - 可能没有找到变量或替换失败")
+
+            # 显示关键内容摘要
+            self.logger.info(f"🔧 变量替换前（前200字符）: {test_case.processed_content[:200]}")
+            self.logger.info(f"🔧 变量替换后（前200字符）: {final_processed_content[:200]}")
+
+            # 重新解析处理后的内容（使用从cache文件读取的内容）
+            processed_test_case = self.parser.parse(final_processed_content)
 
             # 保留原始内容用于报告
             processed_test_case.original_content = test_case.original_content
