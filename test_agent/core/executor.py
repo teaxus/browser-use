@@ -77,9 +77,95 @@ class TestExecutor:
         if hasattr(self, 'screenshots_dir'):
             self.screenshots_dir.mkdir(parents=True, exist_ok=True)
 
-    def _check_system_resources(self):
-        """检查系统资源状况（已禁用 - macOS内存管理不同）"""
-        return  # 跳过所有内存检查
+    def _check_system_resources(self) -> bool:
+        """检查系统资源状况"""
+        try:
+            import psutil
+            memory = psutil.virtual_memory()
+            self.logger.info(f"系统内存: {memory.percent}% 使用, {memory.available / 1024 / 1024 / 1024:.1f} GB 可用")
+
+            # 如果内存使用率过高，发出警告
+            if memory.percent > 90:
+                self.logger.warning(f"⚠️ 内存使用率过高: {memory.percent}%")
+                return False
+            return True
+        except Exception as e:
+            self.logger.warning(f"无法检查系统资源: {e}")
+            return True  # 如果检查失败，默认继续
+
+    def _cleanup_browser_processes(self):
+        """清理现有的浏览器进程以释放资源"""
+        try:
+            import subprocess
+
+            # 杀死现有的Chrome进程
+            try:
+                subprocess.run(['pkill', '-f', 'chrome'], capture_output=True, check=False)
+                self.logger.debug("已清理现有Chrome进程")
+            except Exception as e:
+                self.logger.debug(f"清理Chrome进程时出错: {e}")
+
+            # 杀死现有的Playwright进程
+            try:
+                subprocess.run(['pkill', '-f', 'playwright'], capture_output=True, check=False)
+                self.logger.debug("已清理现有Playwright进程")
+            except Exception as e:
+                self.logger.debug(f"清理Playwright进程时出错: {e}")
+
+            # 等待进程清理
+            import time
+            time.sleep(1)
+
+        except Exception as e:
+            self.logger.warning(f"清理浏览器进程时出错: {e}")
+
+    async def _create_browser_session_with_retry(self) -> 'BrowserSession':
+        """创建浏览器会话，包含重试机制"""
+        max_retries = 3
+
+        for attempt in range(max_retries):
+            try:
+                self.logger.info(f"尝试创建浏览器会话 (第{attempt + 1}次/共{max_retries}次)...")
+
+                # 检查系统资源
+                if not self._check_system_resources():
+                    self.logger.warning("系统资源不足，尝试清理...")
+                    self._cleanup_browser_processes()
+
+                # 创建浏览器会话
+                session = self._create_browser_session()
+
+                # 添加超时启动
+                try:
+                    await asyncio.wait_for(session.start(), timeout=60)
+
+                    # 验证browser context是否存在
+                    if session.browser_context is None:
+                        self.logger.error("⚠️ 浏览器上下文为None，重试...")
+                        await session.kill()
+                        continue
+
+                    self.logger.info("✅ 浏览器会话创建成功")
+                    return session
+
+                except asyncio.TimeoutError:
+                    self.logger.error(f"❌ 浏览器会话启动超时 (尝试 {attempt + 1})")
+                    try:
+                        await session.kill()
+                    except:
+                        pass
+                    continue
+
+            except Exception as e:
+                self.logger.error(f"❌ 创建浏览器会话失败 (尝试 {attempt + 1}): {e}")
+
+                # 在重试前等待并清理
+                if attempt < max_retries - 1:
+                    self.logger.info("等待后重试...")
+                    await asyncio.sleep(5)
+                    self._cleanup_browser_processes()
+
+        raise RuntimeError("经过多次尝试后，无法创建浏览器会话")
 
     async def execute_test_case(self, test_case: TestCase) -> TestExecutionResult:
         """执行完整的测试用例"""
@@ -89,10 +175,8 @@ class TestExecutor:
         self.logger.info(f"开始执行测试用例: {test_case.metadata.test_name}")
 
         try:
-            # 初始化浏览器会话 - 使用正确的创建方法并启动
-            self.browser_session = self._create_browser_session()
-            # 确保浏览器会话完全启动
-            await self.browser_session.start()
+            # 初始化浏览器会话 - 使用改进版本
+            self.browser_session = await self._create_browser_session_with_retry()
             self.logger.info(f"浏览器会话已创建并启动，headless模式: {self.headless}")
 
             # 执行所有步骤
@@ -202,8 +286,7 @@ class TestExecutor:
             # 🔧 关键修复1: 确保浏览器会话是活跃的
             if not self.browser_session:
                 self.logger.warning("浏览器会话不存在，重新创建")
-                self.browser_session = self._create_browser_session()
-                await self.browser_session.start()
+                self.browser_session = await self._create_browser_session_with_retry()
                 self.logger.info("浏览器会话重新创建并启动")
 
             # 🔧 关键修复2: 检查浏览器会话状态（但不重新创建）
@@ -441,7 +524,6 @@ class TestExecutor:
             "- 如果遇到加载等待，请耐心等待页面完全加载",
             "- 如果某个操作失败，请尝试不同的方法",
             "- 对于聊天功能，请保持自然的对话风格",
-            "- 对于聊天功能，请保持自然的对话风格"
         ])
 
         return "\n".join(task_parts)
@@ -728,22 +810,24 @@ class TestExecutor:
             return "获取失败"
 
     def _create_browser_session(self) -> 'BrowserSession':
-        """创建浏览器会话"""
-        # 创建浏览器配置 - 使用更完整的配置避免context创建失败
+        """创建浏览器会话 - 改进版本，包含资源管理和错误处理"""
+        # 创建浏览器配置 - 使用优化配置避免context创建失败
         profile = BrowserProfile(
             headless=self.headless,
-            # 🔧 关键配置: keep_alive=True 防止浏览器被意外关闭
-            keep_alive=True,  # 改为True，防止意外关闭
-            # 确保有合适的超时设置
-            timeout=60000,  # 60秒超时
-            # 添加基本的浏览器参数
+            keep_alive=True,  # 防止浏览器被意外关闭
+            timeout=30000,  # 30秒超时，更合理
             args=[
                 '--no-first-run',
                 '--no-default-browser-check',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
                 '--no-sandbox',
-                '--disable-setuid-sandbox'
+                '--disable-setuid-sandbox',
+                '--memory-pressure-off',  # 禁用内存压力警告
+                '--max_old_space_size=4096',  # 限制内存使用
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding',
             ]
         )
 

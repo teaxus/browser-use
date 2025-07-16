@@ -52,7 +52,8 @@ class MarkdownTestCaseParser:
     def __init__(self):
         self.metadata_pattern = re.compile(r'^---\s*\n(.*?)\n---\s*\n', re.DOTALL | re.MULTILINE)
         self.step_pattern = re.compile(r'^#{1,3}\s+步骤\s*(\d+)[：:]\s*(.+)$', re.MULTILINE)
-        self.objective_pattern = re.compile(r'\*\*\s*目标[：:]\s*\*\*\s*\n(.+?)(?=\n[-*]|\n#{1,3}|\n\*\*|\Z)', re.DOTALL)
+        self.objective_pattern = re.compile(
+            r'(?:\*\*\s*目标[：:]\s*\*\*|##\s*测试目标)\s*\n(.+?)(?=\n[-*]|\n#{1,3}|\n\*\*|\Z)', re.DOTALL)
 
     def parse(self, content: str) -> TestCase:
         """解析Markdown测试用例"""
