@@ -1,14 +1,14 @@
-# Browser-Use 项目概览与开发指南
+# Test Agent 项目概览与开发指南
 
 ## 项目简介
 
-Browser-Use 是一个基于 AI 的浏览器自动化框架，支持智能网页操作、测试自动化和 Web 任务执行。该项目集成了多种 LLM 模型，提供了完整的浏览器会话管理、DOM 解析、元素交互等功能。
+Test Agent 是一个基于 Browser-Use 构建的测试自动化框架，专注于提供智能网页测试、交互自动化和前端质量保障。该项目利用 Browser-Use 的浏览器自动化能力和多种 LLM 模型，提供了完整的测试执行、报告生成和人工干预等功能。
 
 ## 核心功能模块
 
-### 测试代理框架 (Test Agent) ⭐ 最新开发
+### 测试代理框架 (Test Agent) ⭐ 现处于独立项目
 
-- **位置**: `browser_use/test_agent/`
+- **位置**: `test_agent/`
 - **状态**: 🚧 开发中，已解决关键问题
 - **核心组件**:
   - `core/executor.py` - 测试执行器
@@ -24,12 +24,12 @@ Browser-Use 是一个基于 AI 的浏览器自动化框架，支持智能网页�
 
 ### ✅ 已完成功能
 
-1. **核心代理系统** - 稳定运行
-2. **浏览器自动化** - 完整实现
+1. **测试执行器** - 稳定运行
+2. **人工干预机制** - 完整实现
 3. **多 LLM 支持** - 广泛兼容
-4. **DOM 解析系统** - 高效准确
-5. **文件系统集成** - 支持文件操作
-6. **测试代理框架** - 基础功能完成
+4. **Markdown 解析系统** - 高效准确
+5. **报告生成系统** - 支持详细测试记录
+6. **环境变量模板** - 灵活配置管理
 
 ### 🔧 最近修复的问题
 
@@ -55,6 +55,17 @@ Browser-Use 是一个基于 AI 的浏览器自动化框架，支持智能网页�
 
 ```yaml
 # test_agent_config.yaml 示例
+environments:
+  test:
+    base_url: "https://test.example.com"
+    credentials:
+      phone: "18600000000"
+      code: "123456"
+    custom_vars:
+      debug_mode: true
+      timeout: 60000
+      step_timeout: 600 # 10分钟，合理的步骤超时时间
+
 llm_config:
   provider: "openai"
   model: "qwen-vl-max"
@@ -64,6 +75,16 @@ llm_config:
 timeout: 600 # 10 分钟超时
 max_steps: 20
 use_vision: true
+```
+
+### CLI 使用
+
+```bash
+# 运行测试用例
+python -m test_agent.cli.interface run test_chat.md --config test_agent_config.yaml
+
+# 创建示例配置文件
+python -m test_agent.cli.interface init-config
 ```
 
 ## 开发指南
