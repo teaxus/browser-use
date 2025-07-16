@@ -29,7 +29,7 @@ default_environment: "test"
 # LLM配置 - 配置后CLI无需重复指定参数
 llm_config:
   provider: "openai"
-  model: "qwen-vl-max"
+  model: "gpt-4.1-mini"  #  qwen-vl-max gpt-4.1-mini
   base_url: "https://yunwu.zeabur.app/v1"
   api_key: "sk-MhBwOiyBUVlWbxOqgbUAwwiQG6T3qRP8Kk24BABcGErlyvmK"
   temperature: 0.1
