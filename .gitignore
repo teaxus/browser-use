@@ -8,7 +8,7 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints
 ~/
-
+test_results
 # Virtual Environments
 .venv*
 venv/
